@@ -4,8 +4,8 @@ import axios from "axios";
 export default function App() {
   const [instrument, setInstrument] = useState("BTC-PERPETUAL");
   const [iv, setIv] = useState(30);
-  const [startDate, setStartDate] = useState("2024-09-01"); // Changed to September 2024
-  const [endDate, setEndDate] = useState("2024-09-02"); // Changed to September 2024
+  const [startDate, setStartDate] = useState("2025-09-01");
+  const [endDate, setEndDate] = useState("2025-09-02");
   const [loading, setLoading] = useState(false);
   const [summary, setSummary] = useState(null);
   const [error, setError] = useState("");
@@ -20,33 +20,42 @@ export default function App() {
     try {
       const start = new Date(`${startDate}T00:00:00Z`).getTime();
       const end = new Date(`${endDate}T23:59:59Z`).getTime();
-      const url = `${API_BASE}/candles?instrument_name=${encodeURIComponent(instrument)}&start_ts=${start}&end_ts=${end}&resolution=1`;
+      const url = `${API_BASE}/candles?instrument_name=${encodeURIComponent(instrument)}&start_ts=${start}&end_ts=${end}&resolution=60`;
       
       console.log('🚀 Fetching data from:', url);
       
       const res = await axios.get(url, { timeout: 60000 });
       
-      if (!res.data || !res.data.result) {
-        throw new Error("Empty response from backend");
+      // FIX: Handle Bybit response format (array of objects)
+      if (!res.data || !Array.isArray(res.data)) {
+        throw new Error("Invalid response format from backend");
       }
       
-      const candles = res.data.result;
-      if (!candles || !candles.t || candles.t.length === 0) {
+      const candles = res.data;
+      if (candles.length === 0) {
         setError("No candle data returned for the selected range.");
         setLoading(false);
         return;
       }
 
-      console.log('📊 Processing', candles.t.length, 'candles');
+      console.log('📊 Processing', candles.length, 'candles');
       
-      // EXACT Excel replication
-      const movements = computeMovementsFromCandles_ExcelStyle(candles, iv);
-      const s = { instrument, iv, startDate, endDate, candles, movements };
+      // Convert Bybit format to expected format
+      const formattedCandles = {
+        t: candles.map(c => c.timestamp),
+        o: candles.map(c => c.open),
+        h: candles.map(c => c.high),
+        l: candles.map(c => c.low),
+        c: candles.map(c => c.close)
+      };
+      
+      const movements = computeMovementsFromCandles_ExcelStyle(formattedCandles, iv);
+      const s = { instrument, iv, startDate, endDate, candles: formattedCandles, movements };
       setSummary(s);
       
     } catch (err) {
       console.error("Fetch error:", err);
-      const msg = err?.response?.data?.error || err?.response?.data || err?.message || String(err);
+      const msg = err?.response?.data?.error || err?.response?.data?.details || err?.message || String(err);
       setError(msg);
     } finally {
       setLoading(false);
@@ -57,14 +66,14 @@ export default function App() {
    * computeMovementsFromCandles_ExcelStyle
    * EXACT replication of your Excel formulas
    *********************************************************/
-  function computeMovementsFromCandles_ExcelStyle(candles, ivPercent) {
-    if (!candles || !candles.t || candles.t.length === 0) return null;
+  function computeMovementsFromCandles_ExcelStyle(candleData, ivPercent) {
+    if (!candleData || !candleData.t || candleData.t.length === 0) return null;
 
-    const times = (candles.t || []).map(Number);
-    const opens  = (candles.o || []).map(x => (x == null ? null : Number(x)));
-    const highs  = (candles.h || []).map(x => (x == null ? null : Number(x)));
-    const lows   = (candles.l || []).map(x => (x == null ? null : Number(x)));
-    const closes = (candles.c || []).map(x => (x == null ? null : Number(x)));
+    const times = (candleData.t || []).map(Number);
+    const opens  = (candleData.o || []).map(x => (x == null ? null : Number(x)));
+    const highs  = (candleData.h || []).map(x => (x == null ? null : Number(x)));
+    const lows   = (candleData.l || []).map(x => (x == null ? null : Number(x)));
+    const closes = (candleData.c || []).map(x => (x == null ? null : Number(x)));
 
     const n = times.length;
     if (n === 0) return null;
@@ -105,7 +114,6 @@ export default function App() {
       const prevSM = currentSM;
 
       // ---------- FM Calculation (Excel F column) ----------
-      // =IF(C3-F2>=$G$2,C3,IF(D3-F2<=-$G$2,D3,F2))
       let newFM = currentFM;
       if (h != null && (h - currentFM) >= FM_thresh) {
         newFM = h;
@@ -140,7 +148,6 @@ export default function App() {
       currentFM = newFM;
 
       // ---------- LM Calculation (Excel I column) ----------
-      // =IF(C3-I2>=$J$2,C3,IF(D3-I2<=-$J$2,D3,I2))
       let newLM = currentLM;
       if (h != null && (h - currentLM) >= LM_thresh) {
         newLM = h;
@@ -175,7 +182,6 @@ export default function App() {
       currentLM = newLM;
 
       // ---------- SM Calculation (Excel L column) ----------
-      // =IF(C3-L2>=$M$2,C3,IF(D3-L2<=-$M$2,D3,L2))
       let newSM = currentSM;
       if (h != null && (h - currentSM) >= SM_thresh) {
         newSM = h;
@@ -284,8 +290,8 @@ export default function App() {
       {!summary && !error && <div style={{ marginTop: 18, color: "#666" }}>Select a range and click <b>Fetch & Calculate</b>.</div>}
 
       <div style={{ marginTop: 16, fontSize: 12, color: "#999" }}>
-        <div>Backend: <code>https://btcmovements-backend.onrender.com/api</code></div>
-        <div>Using CoinGecko API with September 2024 data</div>
+        <div>Backend: <code>https://btcmovements-backend.onrender.com</code></div>
+        <div>Using Bybit API with real-time perpetual data</div>
       </div>
     </div>
   );
