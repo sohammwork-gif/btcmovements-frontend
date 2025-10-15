@@ -4,8 +4,8 @@ import axios from "axios";
 export default function App() {
   const [instrument, setInstrument] = useState("BTC-PERPETUAL");
   const [iv, setIv] = useState(30);
-  const [startDate, setStartDate] = useState("2024-09-01");
-const [endDate, setEndDate] = useState("2024-09-02");
+  const [startDate, setStartDate] = useState("2024-09-01"); // Changed to September 2024
+  const [endDate, setEndDate] = useState("2024-09-02"); // Changed to September 2024
   const [loading, setLoading] = useState(false);
   const [summary, setSummary] = useState(null);
   const [error, setError] = useState("");
@@ -285,7 +285,7 @@ const [endDate, setEndDate] = useState("2024-09-02");
 
       <div style={{ marginTop: 16, fontSize: 12, color: "#999" }}>
         <div>Backend: <code>https://btcmovements-backend.onrender.com/api</code></div>
-        <div>Using Bybit API with 2024 data</div>
+        <div>Using CoinGecko API with September 2024 data</div>
       </div>
     </div>
   );
