@@ -4,8 +4,8 @@ import axios from "axios";
 export default function App() {
   const [instrument, setInstrument] = useState("BTC-PERPETUAL");
   const [iv, setIv] = useState(30);
-  const [startDate, setStartDate] = useState("2025-09-01");
-  const [endDate, setEndDate] = useState("2025-09-02");
+  const [startDate, setStartDate] = useState("2024-10-01"); // CHANGED: 2024 instead of 2025
+  const [endDate, setEndDate] = useState("2024-10-02");     // CHANGED: 2024 instead of 2025
   const [loading, setLoading] = useState(false);
   const [summary, setSummary] = useState(null);
   const [error, setError] = useState("");
@@ -26,7 +26,7 @@ export default function App() {
       
       const res = await axios.get(url, { timeout: 60000 });
       
-      // FIX: Handle Bybit response format (array of objects)
+      // FIXED: Handle OKX response format (array of objects)
       if (!res.data || !Array.isArray(res.data)) {
         throw new Error("Invalid response format from backend");
       }
@@ -40,7 +40,7 @@ export default function App() {
 
       console.log('📊 Processing', candles.length, 'candles');
       
-      // Convert Bybit format to expected format
+      // Convert OKX format to expected format
       const formattedCandles = {
         t: candles.map(c => c.timestamp),
         o: candles.map(c => c.open),
@@ -291,7 +291,7 @@ export default function App() {
 
       <div style={{ marginTop: 16, fontSize: 12, color: "#999" }}>
         <div>Backend: <code>https://btcmovements-backend.onrender.com</code></div>
-        <div>Using Bybit API with real-time perpetual data</div>
+        <div>Using OKX API with real-time perpetual data</div> {/* CHANGED: OKX instead of CoinGecko */}
       </div>
     </div>
   );
