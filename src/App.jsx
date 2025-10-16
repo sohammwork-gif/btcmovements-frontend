@@ -13,6 +13,7 @@ export default function App() {
   // FIXED: Make sure API_BASE is properly defined
   const API_BASE = "https://btcmovements-backend.onrender.com/api";
 
+
   const fetchAndCompute = async () => {
     setLoading(true);
     setError("");
