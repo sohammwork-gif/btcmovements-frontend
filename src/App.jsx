@@ -4,13 +4,14 @@ import axios from "axios";
 export default function App() {
   const [instrument, setInstrument] = useState("BTC");
   const [iv, setIv] = useState(30);
-  const [startDate, setStartDate] = useState("2024-10-01");
-  const [endDate, setEndDate] = useState("2024-10-01");
+  const [startDate, setStartDate] = useState("2025-10-01");
+  const [endDate, setEndDate] = useState("2025-10-02");
   const [loading, setLoading] = useState(false);
   const [summary, setSummary] = useState(null);
   const [error, setError] = useState("");
 
-  const API_BASE = "https://btcmovements-backend.onrender.com/api";
+  // Use your local backend
+  const API_BASE = "http://localhost:10000/api";
 
   const fetchAndCompute = async () => {
     setLoading(true);
@@ -18,17 +19,14 @@ export default function App() {
     setSummary(null);
 
     try {
-      // Updated URL parameters for the robust Binance backend
+      // Pass start_date/end_date in Dubai-local YYYY-MM-DD (backend converts)
       const url = `${API_BASE}/candles?instrument_name=${encodeURIComponent(instrument)}&start_date=${startDate}&end_date=${endDate}&resolution=1m&market=spot`;
-      
       console.log('Fetching data from:', url);
-      
-      const res = await axios.get(url, { timeout: 60000 });
-      
+      const res = await axios.get(url, { timeout: 120000 });
       if (!res.data || !Array.isArray(res.data)) {
         throw new Error("Invalid response from backend");
       }
-      
+
       const candles = res.data;
       if (candles.length === 0) {
         setError("No data returned for selected date range.");
@@ -36,9 +34,6 @@ export default function App() {
         return;
       }
 
-      console.log('Processing', candles.length, 'candles');
-      
-      // Format data for movement calculations
       const formattedCandles = {
         t: candles.map(c => c.timestamp),
         o: candles.map(c => c.open),
@@ -46,24 +41,25 @@ export default function App() {
         l: candles.map(c => c.low),
         c: candles.map(c => c.close)
       };
-      
+
       const movements = computeMovementsFromCandles_ExcelStyle(formattedCandles, iv);
-      const s = { 
-        instrument, 
-        iv, 
-        startDate, 
-        endDate, 
-        candles: formattedCandles, 
+
+      const s = {
+        instrument,
+        iv,
+        startDate,
+        endDate,
+        candles: formattedCandles,
         movements,
-        rawCandles: candles // Keep original candles for reference
+        rawCandles: candles
       };
       setSummary(s);
-      
+
     } catch (err) {
       console.error("Fetch error:", err);
-      const msg = err?.response?.data?.error || 
-                  err?.response?.data?.details || 
-                  err?.message || 
+      const msg = err?.response?.data?.error ||
+                  err?.response?.data?.details ||
+                  err?.message ||
                   String(err);
       setError(msg);
     } finally {
@@ -71,6 +67,7 @@ export default function App() {
     }
   };
 
+  // EXACT Excel-method function (kept from your working code)
   function computeMovementsFromCandles_ExcelStyle(candleData, ivPercent) {
     if (!candleData || !candleData.t || candleData.t.length === 0) return null;
 
@@ -83,6 +80,7 @@ export default function App() {
     const n = times.length;
     if (n === 0) return null;
 
+    // NOTE: as you used in working code, opening = closes[0]
     const opening = closes[0];
     const FM_thresh = (Number(ivPercent) / 1900) * opening;
     const LM_thresh = FM_thresh * 0.7;
@@ -208,6 +206,55 @@ export default function App() {
     };
   }
 
+  // Download CSV (raw 1-min data) converted to Asia/Dubai time
+  const downloadCsv = () => {
+    if (!summary || !summary.rawCandles) return;
+    const rows = summary.rawCandles;
+    // header
+    const header = ["Open time (Dubai)", "Open", "High", "Low", "Close", "Volume", "Close time (Dubai)", "Quote asset volume", "Trades", "Taker buy base", "Taker buy quote"];
+    const lines = [header.join(",")];
+
+    // convert timestamp to Asia/Dubai in ISO-like format (YYYY-MM-DD HH:MM:SS)
+    const toDubai = (ms) => {
+      const d = new Date(ms);
+      // use toLocaleString with timeZone
+      const iso = d.toLocaleString("sv-SE", { timeZone: "Asia/Dubai", hour12: false }).replace(" ", "T");
+      // remove milliseconds if present
+      return iso;
+    };
+
+    for (const r of rows) {
+      const openTime = toDubai(r.timestamp);
+      const closeTime = toDubai(r.closeTime || (r.timestamp + 60000));
+      const line = [
+        `"${openTime}"`,
+        r.open,
+        r.high,
+        r.low,
+        r.close,
+        r.volume,
+        `"${closeTime}"`,
+        r.quoteVolume,
+        r.trades,
+        r.takerBuyBase,
+        r.takerBuyQuote
+      ].join(",");
+      lines.push(line);
+    }
+
+    const csv = lines.join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const filename = `${instrument}_1m_${startDate}_to_${endDate}_Dubai.csv`;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div style={{ fontFamily: "Inter, sans-serif", padding: 24 }}>
       <h1>Spot Dashboard — Excel-method (exact)</h1>
@@ -220,33 +267,41 @@ export default function App() {
           <option value="ETHUSDT">ETHUSDT (Direct)</option>
         </select>
 
-        <input 
-          type="number" 
-          value={iv} 
-          onChange={(e) => setIv(e.target.value)} 
-          placeholder="IV %" 
-          style={{ width: 90, padding: 6 }} 
+        <input
+          type="number"
+          value={iv}
+          onChange={(e) => setIv(e.target.value)}
+          placeholder="IV %"
+          style={{ width: 90, padding: 6 }}
         />
 
-        <input 
-          type="date" 
-          value={startDate} 
-          onChange={(e) => setStartDate(e.target.value)} 
-          style={{ padding: 6 }} 
+        <input
+          type="date"
+          value={startDate}
+          onChange={(e) => setStartDate(e.target.value)}
+          style={{ padding: 6 }}
         />
-        <input 
-          type="date" 
-          value={endDate} 
-          onChange={(e) => setEndDate(e.target.value)} 
-          style={{ padding: 6 }} 
+        <input
+          type="date"
+          value={endDate}
+          onChange={(e) => setEndDate(e.target.value)}
+          style={{ padding: 6 }}
         />
 
-        <button 
-          onClick={fetchAndCompute} 
-          disabled={loading} 
+        <button
+          onClick={fetchAndCompute}
+          disabled={loading}
           style={{ padding: "6px 12px", background: loading ? "#ccc" : "#007acc", color: "white", border: "none", borderRadius: 4 }}
         >
           {loading ? "Loading..." : "Fetch & Calculate"}
+        </button>
+
+        <button
+          onClick={downloadCsv}
+          disabled={!summary || !summary.rawCandles}
+          style={{ padding: "6px 12px", background: "#28a745", color: "white", border: "none", borderRadius: 4 }}
+        >
+          Download 1m CSV (Dubai)
         </button>
       </div>
 
@@ -269,20 +324,20 @@ export default function App() {
           </div>
 
           <div style={{ marginBottom: 10 }}>
-            <strong>Data Info:</strong> {summary.rawCandles?.length || summary.candles.t.length} candles | 
-            Date: {summary.startDate} to {summary.endDate} | 
+            <strong>Data Info:</strong> {summary.rawCandles?.length || summary.candles.t.length} candles |
+            Date: {summary.startDate} to {summary.endDate} |
             Instrument: {summary.instrument}
           </div>
 
-          <h3>Movement Events (first 100)</h3>
+          <h3>Movement Events (first 200)</h3>
           <div style={{ maxHeight: 400, overflowY: "auto", background: "#fff", padding: 10, borderRadius: 6 }}>
             {summary.movements.events.length === 0 && <div>No events found.</div>}
-            {summary.movements.events.slice(0, 100).map((e, i) => (
+            {summary.movements.events.slice(0, 200).map((e, i) => (
               <div key={i} style={{ padding: 8, borderBottom: "1px solid #eee", fontSize: '12px' }}>
-                [{e.timestamp_iso.split('T')[1].split('.')[0]}] <b>{e.type}</b> | 
-                Price: {Number(e.priceObserved).toLocaleString(undefined, { maximumFractionDigits: 2 })} | 
-                Th: {Number(e.thresholdLevel).toLocaleString(undefined, { maximumFractionDigits: 2 })} | 
-                Prev: {Number(e.prevNeutral).toLocaleString(undefined, { maximumFractionDigits: 2 })} → 
+                [{e.timestamp_iso.split('T')[1].split('.')[0]}] <b>{e.type}</b> |
+                Price: {Number(e.priceObserved).toLocaleString(undefined, { maximumFractionDigits: 2 })} |
+                Th: {Number(e.thresholdLevel).toLocaleString(undefined, { maximumFractionDigits: 2 })} |
+                Prev: {Number(e.prevNeutral).toLocaleString(undefined, { maximumFractionDigits: 2 })} →
                 New: {Number(e.newNeutral).toLocaleString(undefined, { maximumFractionDigits: 2 })}
               </div>
             ))}
@@ -295,7 +350,7 @@ export default function App() {
           <div><b>Instructions:</b></div>
           <div>• Select instrument (BTC/ETH)</div>
           <div>• Set IV percentage (default: 30)</div>
-          <div>• Choose date range (YYYY-MM-DD format)</div>
+          <div>• Choose date range (YYYY-MM-DD)</div>
           <div>• Click "Fetch & Calculate"</div>
           <div style={{ marginTop: 8, fontSize: 11, color: "#999" }}>
             Using robust Binance API with Dubai timezone handling
@@ -304,10 +359,11 @@ export default function App() {
       )}
 
       <div style={{ marginTop: 16, fontSize: 12, color: "#999" }}>
-        <div>Backend: <code>https://btcmovements-backend.onrender.com</code></div>
+        <div>Backend: <code>http://localhost:10000</code></div>
         <div>Data: Binance Spot API (1-minute intervals) | Dubai timezone (UTC+4)</div>
         <div>Instruments: BTC/USDT, ETH/USDT Spot</div>
       </div>
     </div>
   );
 }
+
