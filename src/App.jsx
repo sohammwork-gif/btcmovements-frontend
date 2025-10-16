@@ -2,10 +2,10 @@ import React, { useState } from "react";
 import axios from "axios";
 
 export default function App() {
-  const [instrument, setInstrument] = useState("BTC-USDT-SPOT");
+  const [instrument, setInstrument] = useState("BTC");
   const [iv, setIv] = useState(30);
   const [startDate, setStartDate] = useState("2024-10-01");
-  const [endDate, setEndDate] = useState("2024-10-02");
+  const [endDate, setEndDate] = useState("2024-10-01");
   const [loading, setLoading] = useState(false);
   const [summary, setSummary] = useState(null);
   const [error, setError] = useState("");
@@ -18,9 +18,8 @@ export default function App() {
     setSummary(null);
 
     try {
-      const start = new Date(`${startDate}T00:00:00Z`).getTime();
-      const end = new Date(`${endDate}T23:59:59Z`).getTime();
-      const url = `${API_BASE}/candles?instrument_name=${encodeURIComponent(instrument)}&start_ts=${start}&end_ts=${end}&resolution=60`;
+      // Updated URL parameters for the robust Binance backend
+      const url = `${API_BASE}/candles?instrument_name=${encodeURIComponent(instrument)}&start_date=${startDate}&end_date=${endDate}&resolution=1m&market=spot`;
       
       console.log('Fetching data from:', url);
       
@@ -32,13 +31,14 @@ export default function App() {
       
       const candles = res.data;
       if (candles.length === 0) {
-        setError("No data returned for selected range.");
+        setError("No data returned for selected date range.");
         setLoading(false);
         return;
       }
 
       console.log('Processing', candles.length, 'candles');
       
+      // Format data for movement calculations
       const formattedCandles = {
         t: candles.map(c => c.timestamp),
         o: candles.map(c => c.open),
@@ -48,12 +48,23 @@ export default function App() {
       };
       
       const movements = computeMovementsFromCandles_ExcelStyle(formattedCandles, iv);
-      const s = { instrument, iv, startDate, endDate, candles: formattedCandles, movements };
+      const s = { 
+        instrument, 
+        iv, 
+        startDate, 
+        endDate, 
+        candles: formattedCandles, 
+        movements,
+        rawCandles: candles // Keep original candles for reference
+      };
       setSummary(s);
       
     } catch (err) {
       console.error("Fetch error:", err);
-      const msg = err?.response?.data?.error || err?.response?.data?.details || err?.message || String(err);
+      const msg = err?.response?.data?.error || 
+                  err?.response?.data?.details || 
+                  err?.message || 
+                  String(err);
       setError(msg);
     } finally {
       setLoading(false);
@@ -96,11 +107,13 @@ export default function App() {
         events.push({
           idx: i,
           timestamp: times[i],
+          timestamp_iso: new Date(times[i]).toISOString(),
           type: "FM",
           priceObserved: h,
           thresholdLevel: FM_thresh,
           prevNeutral: currentFM,
-          newNeutral: newFM
+          newNeutral: newFM,
+          diffFromPrev: h - currentFM
         });
       } else if (l - currentFM <= -FM_thresh) {
         newFM = l;
@@ -108,11 +121,13 @@ export default function App() {
         events.push({
           idx: i,
           timestamp: times[i],
+          timestamp_iso: new Date(times[i]).toISOString(),
           type: "FM",
           priceObserved: l,
           thresholdLevel: FM_thresh,
           prevNeutral: currentFM,
-          newNeutral: newFM
+          newNeutral: newFM,
+          diffFromPrev: l - currentFM
         });
       }
       currentFM = newFM;
@@ -125,11 +140,13 @@ export default function App() {
         events.push({
           idx: i,
           timestamp: times[i],
+          timestamp_iso: new Date(times[i]).toISOString(),
           type: "LM",
           priceObserved: h,
           thresholdLevel: LM_thresh,
           prevNeutral: currentLM,
-          newNeutral: newLM
+          newNeutral: newLM,
+          diffFromPrev: h - currentLM
         });
       } else if (l - currentLM <= -LM_thresh) {
         newLM = l;
@@ -137,11 +154,13 @@ export default function App() {
         events.push({
           idx: i,
           timestamp: times[i],
+          timestamp_iso: new Date(times[i]).toISOString(),
           type: "LM",
           priceObserved: l,
           thresholdLevel: LM_thresh,
           prevNeutral: currentLM,
-          newNeutral: newLM
+          newNeutral: newLM,
+          diffFromPrev: l - currentLM
         });
       }
       currentLM = newLM;
@@ -154,11 +173,13 @@ export default function App() {
         events.push({
           idx: i,
           timestamp: times[i],
+          timestamp_iso: new Date(times[i]).toISOString(),
           type: "SM",
           priceObserved: h,
           thresholdLevel: SM_thresh,
           prevNeutral: currentSM,
-          newNeutral: newSM
+          newNeutral: newSM,
+          diffFromPrev: h - currentSM
         });
       } else if (l - currentSM <= -SM_thresh) {
         newSM = l;
@@ -166,11 +187,13 @@ export default function App() {
         events.push({
           idx: i,
           timestamp: times[i],
+          timestamp_iso: new Date(times[i]).toISOString(),
           type: "SM",
           priceObserved: l,
           thresholdLevel: SM_thresh,
           prevNeutral: currentSM,
-          newNeutral: newSM
+          newNeutral: newSM,
+          diffFromPrev: l - currentSM
         });
       }
       currentSM = newSM;
@@ -191,16 +214,38 @@ export default function App() {
 
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
         <select value={instrument} onChange={(e) => setInstrument(e.target.value)} style={{ padding: 6 }}>
-          <option value="BTC-USDT-SPOT">BTC-USDT-SPOT</option>
-          <option value="ETH-USDT-SPOT">ETH-USDT-SPOT</option>
+          <option value="BTC">BTC/USDT Spot</option>
+          <option value="ETH">ETH/USDT Spot</option>
+          <option value="BTCUSDT">BTCUSDT (Direct)</option>
+          <option value="ETHUSDT">ETHUSDT (Direct)</option>
         </select>
 
-        <input type="number" value={iv} onChange={(e) => setIv(e.target.value)} placeholder="IV %" style={{ width: 90, padding: 6 }} />
+        <input 
+          type="number" 
+          value={iv} 
+          onChange={(e) => setIv(e.target.value)} 
+          placeholder="IV %" 
+          style={{ width: 90, padding: 6 }} 
+        />
 
-        <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} style={{ padding: 6 }} />
-        <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} style={{ padding: 6 }} />
+        <input 
+          type="date" 
+          value={startDate} 
+          onChange={(e) => setStartDate(e.target.value)} 
+          style={{ padding: 6 }} 
+        />
+        <input 
+          type="date" 
+          value={endDate} 
+          onChange={(e) => setEndDate(e.target.value)} 
+          style={{ padding: 6 }} 
+        />
 
-        <button onClick={fetchAndCompute} disabled={loading} style={{ padding: "6px 12px" }}>
+        <button 
+          onClick={fetchAndCompute} 
+          disabled={loading} 
+          style={{ padding: "6px 12px", background: loading ? "#ccc" : "#007acc", color: "white", border: "none", borderRadius: 4 }}
+        >
           {loading ? "Loading..." : "Fetch & Calculate"}
         </button>
       </div>
@@ -223,12 +268,18 @@ export default function App() {
             <div><b>SM</b>: th={Number(summary.movements.thresholds.SM).toLocaleString(undefined, { maximumFractionDigits: 2 })} | Hits: {summary.movements.totals.SM}</div>
           </div>
 
+          <div style={{ marginBottom: 10 }}>
+            <strong>Data Info:</strong> {summary.rawCandles?.length || summary.candles.t.length} candles | 
+            Date: {summary.startDate} to {summary.endDate} | 
+            Instrument: {summary.instrument}
+          </div>
+
           <h3>Movement Events (first 100)</h3>
           <div style={{ maxHeight: 400, overflowY: "auto", background: "#fff", padding: 10, borderRadius: 6 }}>
             {summary.movements.events.length === 0 && <div>No events found.</div>}
             {summary.movements.events.slice(0, 100).map((e, i) => (
               <div key={i} style={{ padding: 8, borderBottom: "1px solid #eee", fontSize: '12px' }}>
-                [{new Date(e.timestamp).toISOString().split('T')[1]}] <b>{e.type}</b> | 
+                [{e.timestamp_iso.split('T')[1].split('.')[0]}] <b>{e.type}</b> | 
                 Price: {Number(e.priceObserved).toLocaleString(undefined, { maximumFractionDigits: 2 })} | 
                 Th: {Number(e.thresholdLevel).toLocaleString(undefined, { maximumFractionDigits: 2 })} | 
                 Prev: {Number(e.prevNeutral).toLocaleString(undefined, { maximumFractionDigits: 2 })} → 
@@ -239,11 +290,23 @@ export default function App() {
         </div>
       )}
 
-      {!summary && !error && <div style={{ marginTop: 18, color: "#666" }}>Select a range and click <b>Fetch & Calculate</b>.</div>}
+      {!summary && !error && (
+        <div style={{ marginTop: 18, color: "#666", background: "#f5f5f5", padding: 12, borderRadius: 6 }}>
+          <div><b>Instructions:</b></div>
+          <div>• Select instrument (BTC/ETH)</div>
+          <div>• Set IV percentage (default: 30)</div>
+          <div>• Choose date range (YYYY-MM-DD format)</div>
+          <div>• Click "Fetch & Calculate"</div>
+          <div style={{ marginTop: 8, fontSize: 11, color: "#999" }}>
+            Using robust Binance API with Dubai timezone handling
+          </div>
+        </div>
+      )}
 
       <div style={{ marginTop: 16, fontSize: 12, color: "#999" }}>
         <div>Backend: <code>https://btcmovements-backend.onrender.com</code></div>
-        <div>Using Binance Spot API with real-time BTC/USDT & ETH/USDT data</div>
+        <div>Data: Binance Spot API (1-minute intervals) | Dubai timezone (UTC+4)</div>
+        <div>Instruments: BTC/USDT, ETH/USDT Spot</div>
       </div>
     </div>
   );
