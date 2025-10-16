@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import axios from "axios";
 
 export default function App() {
-  const [instrument, setInstrument] = useState("BTC-PERPETUAL");
+  const [instrument, setInstrument] = useState("BTC-USDT-SPOT");
   const [iv, setIv] = useState(30);
   const [startDate, setStartDate] = useState("2024-10-01");
   const [endDate, setEndDate] = useState("2024-10-02");
@@ -187,11 +187,12 @@ export default function App() {
 
   return (
     <div style={{ fontFamily: "Inter, sans-serif", padding: 24 }}>
-      <h1>Perpetual Dashboard — Excel-method (exact)</h1>
+      <h1>Spot Dashboard — Excel-method (exact)</h1>
 
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
         <select value={instrument} onChange={(e) => setInstrument(e.target.value)} style={{ padding: 6 }}>
-          <option value="BTC-PERPETUAL">BTC-PERPETUAL</option>
+          <option value="BTC-USDT-SPOT">BTC-USDT-SPOT</option>
+          <option value="ETH-USDT-SPOT">ETH-USDT-SPOT</option>
         </select>
 
         <input type="number" value={iv} onChange={(e) => setIv(e.target.value)} placeholder="IV %" style={{ width: 90, padding: 6 }} />
@@ -242,7 +243,7 @@ export default function App() {
 
       <div style={{ marginTop: 16, fontSize: 12, color: "#999" }}>
         <div>Backend: <code>https://btcmovements-backend.onrender.com</code></div>
-        <div>Using Binance API with real-time data</div>
+        <div>Using Binance Spot API with real-time BTC/USDT & ETH/USDT data</div>
       </div>
     </div>
   );
