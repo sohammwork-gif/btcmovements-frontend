@@ -10,9 +10,7 @@ export default function App() {
   const [summary, setSummary] = useState(null);
   const [error, setError] = useState("");
 
-  // FIXED: Make sure API_BASE is properly defined
   const API_BASE = "https://btcmovements-backend.onrender.com/api";
-
 
   const fetchAndCompute = async () => {
     setLoading(true);
@@ -22,29 +20,25 @@ export default function App() {
     try {
       const start = new Date(`${startDate}T00:00:00Z`).getTime();
       const end = new Date(`${endDate}T23:59:59Z`).getTime();
-      
-      // FIXED: Proper URL construction
       const url = `${API_BASE}/candles?instrument_name=${encodeURIComponent(instrument)}&start_ts=${start}&end_ts=${end}&resolution=60`;
       
-      console.log('🚀 Fetching data from:', url);
+      console.log('Fetching data from:', url);
       
       const res = await axios.get(url, { timeout: 60000 });
       
-      // Handle OKX response format
       if (!res.data || !Array.isArray(res.data)) {
-        throw new Error("Invalid response format from backend");
+        throw new Error("Invalid response from backend");
       }
       
       const candles = res.data;
       if (candles.length === 0) {
-        setError("No candle data returned for the selected range.");
+        setError("No data returned for selected range.");
         setLoading(false);
         return;
       }
 
-      console.log('📊 Processing', candles.length, 'candles');
+      console.log('Processing', candles.length, 'candles');
       
-      // Convert to expected format
       const formattedCandles = {
         t: candles.map(c => c.timestamp),
         o: candles.map(c => c.open),
@@ -66,6 +60,190 @@ export default function App() {
     }
   };
 
-  // ... keep the rest of your computeMovementsFromCandles_ExcelStyle function exactly as before ...
-  // ... and the return JSX exactly as before ...
+  function computeMovementsFromCandles_ExcelStyle(candleData, ivPercent) {
+    if (!candleData || !candleData.t || candleData.t.length === 0) return null;
+
+    const times = candleData.t.map(Number);
+    const opens = candleData.o.map(Number);
+    const highs = candleData.h.map(Number);
+    const lows = candleData.l.map(Number);
+    const closes = candleData.c.map(Number);
+
+    const n = times.length;
+    if (n === 0) return null;
+
+    const opening = closes[0];
+    const FM_thresh = (Number(ivPercent) / 1900) * opening;
+    const LM_thresh = FM_thresh * 0.7;
+    const SM_thresh = FM_thresh * 0.25;
+
+    let currentFM = opening;
+    let currentLM = opening;
+    let currentSM = opening;
+
+    let hitsFM = 0, hitsLM = 0, hitsSM = 0;
+    const events = [];
+
+    for (let i = 0; i < n; i++) {
+      const h = highs[i];
+      const l = lows[i];
+
+      // FM Calculation
+      let newFM = currentFM;
+      if (h - currentFM >= FM_thresh) {
+        newFM = h;
+        hitsFM++;
+        events.push({
+          idx: i,
+          timestamp: times[i],
+          type: "FM",
+          priceObserved: h,
+          thresholdLevel: FM_thresh,
+          prevNeutral: currentFM,
+          newNeutral: newFM
+        });
+      } else if (l - currentFM <= -FM_thresh) {
+        newFM = l;
+        hitsFM++;
+        events.push({
+          idx: i,
+          timestamp: times[i],
+          type: "FM",
+          priceObserved: l,
+          thresholdLevel: FM_thresh,
+          prevNeutral: currentFM,
+          newNeutral: newFM
+        });
+      }
+      currentFM = newFM;
+
+      // LM Calculation
+      let newLM = currentLM;
+      if (h - currentLM >= LM_thresh) {
+        newLM = h;
+        hitsLM++;
+        events.push({
+          idx: i,
+          timestamp: times[i],
+          type: "LM",
+          priceObserved: h,
+          thresholdLevel: LM_thresh,
+          prevNeutral: currentLM,
+          newNeutral: newLM
+        });
+      } else if (l - currentLM <= -LM_thresh) {
+        newLM = l;
+        hitsLM++;
+        events.push({
+          idx: i,
+          timestamp: times[i],
+          type: "LM",
+          priceObserved: l,
+          thresholdLevel: LM_thresh,
+          prevNeutral: currentLM,
+          newNeutral: newLM
+        });
+      }
+      currentLM = newLM;
+
+      // SM Calculation
+      let newSM = currentSM;
+      if (h - currentSM >= SM_thresh) {
+        newSM = h;
+        hitsSM++;
+        events.push({
+          idx: i,
+          timestamp: times[i],
+          type: "SM",
+          priceObserved: h,
+          thresholdLevel: SM_thresh,
+          prevNeutral: currentSM,
+          newNeutral: newSM
+        });
+      } else if (l - currentSM <= -SM_thresh) {
+        newSM = l;
+        hitsSM++;
+        events.push({
+          idx: i,
+          timestamp: times[i],
+          type: "SM",
+          priceObserved: l,
+          thresholdLevel: SM_thresh,
+          prevNeutral: currentSM,
+          newNeutral: newSM
+        });
+      }
+      currentSM = newSM;
+    }
+
+    return {
+      openingPrice: opening,
+      ivPercent: Number(ivPercent),
+      thresholds: { FM: FM_thresh, LM: LM_thresh, SM: SM_thresh },
+      totals: { FM: hitsFM, LM: hitsLM, SM: hitsSM },
+      events: events.sort((a, b) => a.timestamp - b.timestamp)
+    };
+  }
+
+  return (
+    <div style={{ fontFamily: "Inter, sans-serif", padding: 24 }}>
+      <h1>Perpetual Dashboard — Excel-method (exact)</h1>
+
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+        <select value={instrument} onChange={(e) => setInstrument(e.target.value)} style={{ padding: 6 }}>
+          <option value="BTC-PERPETUAL">BTC-PERPETUAL</option>
+        </select>
+
+        <input type="number" value={iv} onChange={(e) => setIv(e.target.value)} placeholder="IV %" style={{ width: 90, padding: 6 }} />
+
+        <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} style={{ padding: 6 }} />
+        <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} style={{ padding: 6 }} />
+
+        <button onClick={fetchAndCompute} disabled={loading} style={{ padding: "6px 12px" }}>
+          {loading ? "Loading..." : "Fetch & Calculate"}
+        </button>
+      </div>
+
+      {error && (
+        <div style={{ background: "#fdecea", color: "#7a1f1f", padding: 10, borderRadius: 6, marginBottom: 12 }}>
+          <b>Error:</b> {String(error)}
+        </div>
+      )}
+
+      {summary && summary.movements && (
+        <div style={{ background: "#fafafa", padding: 14, borderRadius: 8 }}>
+          <div style={{ marginBottom: 8 }}>
+            <strong>Opening Price:</strong> {Number(summary.movements.openingPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+          </div>
+
+          <div style={{ display: "flex", gap: 16, marginBottom: 10, flexWrap: 'wrap' }}>
+            <div><b>FM</b>: th={Number(summary.movements.thresholds.FM).toLocaleString(undefined, { maximumFractionDigits: 2 })} | Hits: {summary.movements.totals.FM}</div>
+            <div><b>LM</b>: th={Number(summary.movements.thresholds.LM).toLocaleString(undefined, { maximumFractionDigits: 2 })} | Hits: {summary.movements.totals.LM}</div>
+            <div><b>SM</b>: th={Number(summary.movements.thresholds.SM).toLocaleString(undefined, { maximumFractionDigits: 2 })} | Hits: {summary.movements.totals.SM}</div>
+          </div>
+
+          <h3>Movement Events (first 100)</h3>
+          <div style={{ maxHeight: 400, overflowY: "auto", background: "#fff", padding: 10, borderRadius: 6 }}>
+            {summary.movements.events.length === 0 && <div>No events found.</div>}
+            {summary.movements.events.slice(0, 100).map((e, i) => (
+              <div key={i} style={{ padding: 8, borderBottom: "1px solid #eee", fontSize: '12px' }}>
+                [{new Date(e.timestamp).toISOString().split('T')[1]}] <b>{e.type}</b> | 
+                Price: {Number(e.priceObserved).toLocaleString(undefined, { maximumFractionDigits: 2 })} | 
+                Th: {Number(e.thresholdLevel).toLocaleString(undefined, { maximumFractionDigits: 2 })} | 
+                Prev: {Number(e.prevNeutral).toLocaleString(undefined, { maximumFractionDigits: 2 })} → 
+                New: {Number(e.newNeutral).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {!summary && !error && <div style={{ marginTop: 18, color: "#666" }}>Select a range and click <b>Fetch & Calculate</b>.</div>}
+
+      <div style={{ marginTop: 16, fontSize: 12, color: "#999" }}>
+        <div>Backend: <code>https://btcmovements-backend.onrender.com</code></div>
+        <div>Using Binance API with real-time data</div>
+      </div>
+    </div>
+  );
 }
