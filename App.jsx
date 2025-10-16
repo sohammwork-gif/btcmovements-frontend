@@ -11,7 +11,7 @@ export default function App() {
   const [error, setError] = useState("");
 
   // FIXED: Make sure API_BASE is properly defined
-  const API_BASE = "https://btcmovements-backend.onrender.com/api";
+  const API_BASE = "https://studying-glance-responded-written.trycloudflare.com/api";
 
   const fetchAndCompute = async () => {
     setLoading(true);
