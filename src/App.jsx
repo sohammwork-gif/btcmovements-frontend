@@ -10,8 +10,8 @@ export default function App() {
   const [summary, setSummary] = useState(null);
   const [error, setError] = useState("");
 
-  // Use your local backend
-  const API_BASE = "http://localhost:10000/api";
+  // <-- Use your Render backend here (HTTPS)
+  const API_BASE = "https://btcmovements-backend.onrender.com/api";
 
   const fetchAndCompute = async () => {
     setLoading(true);
@@ -19,14 +19,15 @@ export default function App() {
     setSummary(null);
 
     try {
-      // Pass start_date/end_date in Dubai-local YYYY-MM-DD (backend converts)
+      // build request URL (Render backend expects start_date/end_date in Dubai-local YYYY-MM-DD)
       const url = `${API_BASE}/candles?instrument_name=${encodeURIComponent(instrument)}&start_date=${startDate}&end_date=${endDate}&resolution=1m&market=spot`;
-      console.log('Fetching data from:', url);
+      console.info("Requesting:", url);
+
       const res = await axios.get(url, { timeout: 120000 });
+
       if (!res.data || !Array.isArray(res.data)) {
         throw new Error("Invalid response from backend");
       }
-
       const candles = res.data;
       if (candles.length === 0) {
         setError("No data returned for selected date range.");
@@ -34,6 +35,7 @@ export default function App() {
         return;
       }
 
+      // map into the format used by your movement function
       const formattedCandles = {
         t: candles.map(c => c.timestamp),
         o: candles.map(c => c.open),
@@ -54,20 +56,26 @@ export default function App() {
         rawCandles: candles
       };
       setSummary(s);
-
+      console.info("Computed summary; window.appSummary available");
+      try { window.appSummary = s; } catch {}
     } catch (err) {
       console.error("Fetch error:", err);
-      const msg = err?.response?.data?.error ||
-                  err?.response?.data?.details ||
-                  err?.message ||
-                  String(err);
-      setError(msg);
+      // Provide extra diagnostics for network errors
+      if (err.message && err.message.toLowerCase().includes("network")) {
+        setError("Network Error — frontend could not reach the backend. Check Render status or CORS. See console for details.");
+      } else if (err.response) {
+        // backend returned an error body
+        const body = err.response.data;
+        setError(`Backend error: ${err.response.status} ${err.response.statusText} — ${JSON.stringify(body)}`);
+      } else {
+        setError(err.message || String(err));
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  // EXACT Excel-method function (kept from your working code)
+  // EXACT Excel-method movement function (unchanged)
   function computeMovementsFromCandles_ExcelStyle(candleData, ivPercent) {
     if (!candleData || !candleData.t || candleData.t.length === 0) return null;
 
@@ -80,7 +88,7 @@ export default function App() {
     const n = times.length;
     if (n === 0) return null;
 
-    // NOTE: as you used in working code, opening = closes[0]
+    // opening chosen as first close (your working version used closes[0])
     const opening = closes[0];
     const FM_thresh = (Number(ivPercent) / 1900) * opening;
     const LM_thresh = FM_thresh * 0.7;
@@ -210,16 +218,12 @@ export default function App() {
   const downloadCsv = () => {
     if (!summary || !summary.rawCandles) return;
     const rows = summary.rawCandles;
-    // header
     const header = ["Open time (Dubai)", "Open", "High", "Low", "Close", "Volume", "Close time (Dubai)", "Quote asset volume", "Trades", "Taker buy base", "Taker buy quote"];
     const lines = [header.join(",")];
 
-    // convert timestamp to Asia/Dubai in ISO-like format (YYYY-MM-DD HH:MM:SS)
     const toDubai = (ms) => {
       const d = new Date(ms);
-      // use toLocaleString with timeZone
       const iso = d.toLocaleString("sv-SE", { timeZone: "Asia/Dubai", hour12: false }).replace(" ", "T");
-      // remove milliseconds if present
       return iso;
     };
 
@@ -308,6 +312,14 @@ export default function App() {
       {error && (
         <div style={{ background: "#fdecea", color: "#7a1f1f", padding: 10, borderRadius: 6, marginBottom: 12 }}>
           <b>Error:</b> {String(error)}
+          <div style={{ fontSize: 12, marginTop: 6 }}>
+            If this says "Network Error" or "Backend error", check:
+            <ul>
+              <li>That <code>https://btcmovements-backend.onrender.com/api/health</code> responds in your browser (open that URL).</li>
+              <li>Render may block requests from your IP or enforce rate limits — check Render logs.</li>
+              <li>If you see CORS issues, the backend must allow your frontend origin (but Render URL + Vite local should work because backend uses CORS wildcard).</li>
+            </ul>
+          </div>
         </div>
       )}
 
@@ -353,17 +365,17 @@ export default function App() {
           <div>• Choose date range (YYYY-MM-DD)</div>
           <div>• Click "Fetch & Calculate"</div>
           <div style={{ marginTop: 8, fontSize: 11, color: "#999" }}>
-            Using robust Binance API with Dubai timezone handling
+            Backend: https://btcmovements-backend.onrender.com (Binance API, Dubai days)
           </div>
         </div>
       )}
 
       <div style={{ marginTop: 16, fontSize: 12, color: "#999" }}>
-        <div>Backend: <code>http://localhost:10000</code></div>
+        <div>Backend: <code>https://btcmovements-backend.onrender.com</code></div>
         <div>Data: Binance Spot API (1-minute intervals) | Dubai timezone (UTC+4)</div>
-        <div>Instruments: BTC/USDT, ETH/USDT Spot</div>
       </div>
     </div>
   );
 }
+
 
